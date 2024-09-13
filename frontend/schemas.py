@@ -20,7 +20,7 @@ class BookSchema(BookBase):
     borrowed_until: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserBase(BaseModel):
@@ -39,7 +39,7 @@ class UserSchema(UserBase):
     borowed_books: list[BookSchema] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BorrowBase(BaseModel):
@@ -57,4 +57,4 @@ class BorrowSchema(BorrowBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
