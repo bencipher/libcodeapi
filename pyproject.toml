@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "Library Management API"
+version = "0.1.0"
+description = ""
+authors = ["bcx <femolak@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.114.1"
+uvicorn = "^0.30.6"
+pydantic = "^2.9.1"
+pytest = "^8.3.3"
+motor = "3.5.1"
+sqlalchemy = "2.0.34"
+psycopg2-binary = "2.9.9"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
