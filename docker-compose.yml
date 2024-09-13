@@ -44,6 +44,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - app_network
+    ports:
+      - "5455:5432"  
 
   mongo:
     image: bitnami/mongodb:latest
