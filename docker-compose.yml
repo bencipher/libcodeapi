@@ -17,6 +17,7 @@ services:
       - app_network
     volumes:
       - ./frontend:/app/frontend
+      - ./alembic:/app/alembic
 
   backend:
     build:
