@@ -1,7 +1,25 @@
-from datetime import datetime, timedelta
+import logging
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from typing import List, Optional
 
-from . import models, schemas
+from frontend import models, schemas
+
+# Set up logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
+
+
+def get_books(db: Session) -> Optional[List[models.Book]]:
+    try:
+        books = db.query(models.Book).all()
+        return books
+    except SQLAlchemyError as e:
+        logger.error(f"Database error occurred while fetching books: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error occurred while fetching books: {str(e)}")
+        return None
 
 
 def get_user_by_id(db: Session, user_id: int):
@@ -31,15 +49,6 @@ def create_book(db: Session, item: schemas.BookCreate):
     db.commit()
     db.refresh(db_item)
     return db_item
-
-
-def get_books(
-    db: Session, skip: int = 0, limit: int = 100, available_only: bool = True
-):
-    query = db.query(models.Book)
-    if available_only:
-        query = query.filter(models.Book.is_available == True)
-    return query.offset(skip).limit(limit).all()
 
 
 def get_book(db: Session, book_id: int):

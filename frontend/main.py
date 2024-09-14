@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.exceptions import ResponseValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from frontend.crud import (
@@ -8,6 +10,7 @@ from frontend.crud import (
     get_book,
     get_books,
 )
+from frontend.exceptions import add_exception_handlers
 from frontend.schemas import BookSchema, BorrowSchema, UserCreate, UserSchema
 from frontend.storage import SessionLocal
 
@@ -15,10 +18,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 
+
 app = FastAPI()
 
+add_exception_handlers(app)
 
-# Dependency
+
 def get_db():
     db = SessionLocal()
     try:
@@ -37,7 +42,13 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 @app.get("/books/", response_model=List[BookSchema])
 def list_books(db: Session = Depends(get_db)):
     books = get_books(db)
-    return {"response": books}
+    if books is None:
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching books"
+        )
+    if not books:
+        raise HTTPException(status_code=404, detail="No books found")
+    return books
 
 
 @app.get("/books/{id}", response_model=BookSchema)
