@@ -79,11 +79,9 @@ def fetch_single_book(id: int, db: Session = Depends(get_db)):
     return book
 
 
-@app.post("/books/borrow/{id}")
-def borrow_book_item(
-    id: int, borrow_request: BorrowSchema, db: Session = Depends(get_db)
-):
-    book = borrow_book(**borrow_request.model_dump(), db=db)
+@app.post("/books/borrow/")
+def borrow_book_item(borrow_request: BorrowSchema, db: Session = Depends(get_db)):
+    book = borrow_book(db, borrow_request)
     if not book or not book.is_available:
         raise HTTPException(status_code=404, detail="Book not available for borrowing")
     return {"message": "Book borrowed successfully"}

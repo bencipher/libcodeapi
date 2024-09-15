@@ -74,28 +74,29 @@ def filter_books(
     return query.all()
 
 
-def borrow_book(db: Session, book_id: int, user_id: int, days: int):
-    book = get_book(db, book_id)
-    if not book or not book.is_available:
+def borrow_book(db: Session, book_request: schemas.BorrowSchema):
+
+    book_request = get_book(db, book_request.book_id)
+    if not book_request or not book_request.is_available:
         return None
 
     borrow_date = datetime.now(timezone.utc)
-    return_date = borrow_date + timedelta(days=days)
+    return_date = borrow_date + timedelta(days=book_request.days)
 
     borrow = models.Borrow(
-        user_id=user_id,
-        book_id=book_id,
+        user_id=book_request.user_id,
+        book_id=book_request.book_id,
         borrow_date=borrow_date,
         return_date=return_date,
     )
 
-    book.is_available = False
-    book.borrowed_until = return_date
-    book.borrower_id = user_id
+    book_request.is_available = False
+    book_request.borrowed_until = return_date
+    book_request.borrower_id = book_request.user_id
 
     db.add(borrow)
     db.commit()
     db.refresh(borrow)
-    db.refresh(book)
+    db.refresh(book_request)
 
     return borrow
