@@ -6,6 +6,11 @@ from typing import List, Optional
 import bcrypt
 
 from frontend import models, schemas
+from frontend.exceptions import (
+    BookNotAvailableError,
+    BookNotFoundError,
+    UserNotFoundError,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.ERROR)
@@ -74,14 +79,19 @@ def filter_books(
     return query.all()
 
 
-def borrow_book(db: Session, book_request: schemas.BorrowSchema):
+def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
+    book = get_book(db, book_request.book_id)
+    if not book:
+        raise BookNotFoundError(book_request.book_id)
+    if not book.is_available:
+        raise BookNotAvailableError(book_request.book_id)
 
-    book_request = get_book(db, book_request.book_id)
-    if not book_request or not book_request.is_available:
-        return None
+    user = get_user_by_id(db, book_request.user_id)
+    if not user:
+        raise UserNotFoundError(book_request.user_id)
 
     borrow_date = datetime.now(timezone.utc)
-    return_date = borrow_date + timedelta(days=book_request.days)
+    return_date = borrow_date + timedelta(days=book_request.num_of_days)
 
     borrow = models.Borrow(
         user_id=book_request.user_id,
@@ -90,13 +100,13 @@ def borrow_book(db: Session, book_request: schemas.BorrowSchema):
         return_date=return_date,
     )
 
-    book_request.is_available = False
-    book_request.borrowed_until = return_date
-    book_request.borrower_id = book_request.user_id
+    book.is_available = False
+    book.borrowed_until = return_date
+    book.borrower_id = book_request.user_id
 
     db.add(borrow)
     db.commit()
     db.refresh(borrow)
-    db.refresh(book_request)
+    db.refresh(book)
 
     return borrow

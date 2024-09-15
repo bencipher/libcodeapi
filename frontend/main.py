@@ -14,7 +14,8 @@ from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
     BookFilterParams,
     BookSchema,
-    BorrowSchema,
+    BorrowRequestSchema,
+    BorrowResponse,
     UserCreate,
     UserSchema,
 )
@@ -79,11 +80,15 @@ def fetch_single_book(id: int, db: Session = Depends(get_db)):
     return book
 
 
-@app.post("/books/borrow/")
-def borrow_book_item(borrow_request: BorrowSchema, db: Session = Depends(get_db)):
-    book = borrow_book(db, borrow_request)
-    if not book or not book.is_available:
-        raise HTTPException(status_code=404, detail="Book not available for borrowing")
+@app.post("/books/borrow/", response_model=BorrowResponse)
+def borrow_book_item(
+    borrow_request: BorrowRequestSchema, db: Session = Depends(get_db)
+):
+    borrow_task = borrow_book(db, borrow_request)
+    if not borrow_task:
+        raise HTTPException(
+            status_code=403, detail="Book cannot be borrowed, please verify details"
+        )
     return {"message": "Book borrowed successfully"}
 
 
