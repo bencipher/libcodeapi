@@ -2,6 +2,7 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
+import bcrypt
 
 from frontend import models, schemas
 
@@ -35,8 +36,14 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
 
 
 def create_user_record(db: Session, user: schemas.UserCreate):
-    fake_hashed_password = user.password + "notreallyhashed"
-    db_user = models.User(email=user.email, hashed_password=fake_hashed_password)
+    # Hash the password
+    hashed_password = bcrypt.hashpw(user.password.encode("utf-8"), bcrypt.gensalt())
+    db_user = models.User(
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        hashed_password=hashed_password.decode("utf-8"),
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)

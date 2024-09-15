@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, status
 from fastapi.exceptions import ResponseValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -33,10 +33,13 @@ def get_db():
 
 
 # Endpoints
-@app.post("/users/", response_model=UserSchema)
+@app.post("/users/", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = create_user_record(**user.model_dump(), db=db)
-    return {"response": db_user}
+    try:
+        db_user = create_user_record(db, user)
+        return db_user
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @app.get("/books/", response_model=List[BookSchema])
