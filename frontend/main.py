@@ -11,7 +11,13 @@ from frontend.crud import (
     get_books,
 )
 from frontend.exceptions import add_exception_handlers
-from frontend.schemas import BookSchema, BorrowSchema, UserCreate, UserSchema
+from frontend.schemas import (
+    BookFilterParams,
+    BookSchema,
+    BorrowSchema,
+    UserCreate,
+    UserSchema,
+)
 from frontend.storage import SessionLocal
 
 from pydantic import BaseModel
@@ -42,7 +48,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@app.get("/books/", response_model=List[BookSchema])
+@app.get("/books/", response_model=List[BookSchema], status_code=status.HTTP_200_OK)
 def list_books(db: Session = Depends(get_db)):
     books = get_books(db)
     if books is None:
@@ -54,24 +60,23 @@ def list_books(db: Session = Depends(get_db)):
     return books
 
 
+@app.get("/books/filter", response_model=List[BookSchema])
+def filter_book_records(
+    params: BookFilterParams = Depends(),
+    db: Session = Depends(get_db),
+):
+    books = filter_books(db, params.category, params.publisher)
+    if not books:
+        raise HTTPException(status_code=404, detail="Books matching filter not found")
+    return books
+
+
 @app.get("/books/{id}", response_model=BookSchema)
 def fetch_single_book(id: int, db: Session = Depends(get_db)):
     book = get_book(db, id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
-
-
-@app.get("/books/filter", response_model=List[BookSchema])
-def filter_book_records(
-    publisher: Optional[str] = None,
-    category: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    books = filter_books(db, category, publisher)
-    if not books:
-        raise HTTPException(status_code=404, detail="Books matching filter not found")
-    return books
 
 
 @app.post("/books/borrow/{id}")

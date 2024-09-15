@@ -1,5 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 
 
 class BookBase(BaseModel):
@@ -15,7 +16,7 @@ class BookCreate(BookBase):
 
 class BookSchema(BookBase):
     id: int
-    borrower_id: int
+    borrower_id: int | None = None
     is_available: bool
     borrowed_until: datetime
 
@@ -58,3 +59,8 @@ class BorrowSchema(BorrowBase):
 
     class Config:
         from_attributes = True
+
+
+class BookFilterParams(BaseModel):
+    publisher: Optional[str] = Field(None, min_length=1, max_length=100)
+    category: Optional[str] = Field(None, min_length=1, max_length=50)

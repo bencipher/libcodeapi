@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -63,21 +64,14 @@ def get_book(db: Session, book_id: int):
 
 
 def filter_books(
-    db: Session,
-    publisher: str = None,
-    category: str = None,
-    skip: int = 0,
-    limit: int = 100,
+    db: Session, category: Optional[str] = None, publisher: Optional[str] = None
 ):
     query = db.query(models.Book)
-
-    if publisher:
-        query = query.filter(models.Book.publisher == publisher)
-
     if category:
-        query = query.filter(models.Book.category == category)
-
-    return query.offset(skip).limit(limit).all()
+        query = query.filter(models.Book.category.ilike(f"%{category}%"))
+    if publisher:
+        query = query.filter(models.Book.publisher.ilike(f"%{publisher}%"))
+    return query.all()
 
 
 def borrow_book(db: Session, book_id: int, user_id: int, days: int):
@@ -85,7 +79,7 @@ def borrow_book(db: Session, book_id: int, user_id: int, days: int):
     if not book or not book.is_available:
         return None
 
-    borrow_date = datetime.utcnow()
+    borrow_date = datetime.now(timezone.utc)
     return_date = borrow_date + timedelta(days=days)
 
     borrow = models.Borrow(
