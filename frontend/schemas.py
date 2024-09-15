@@ -46,16 +46,16 @@ class UserSchema(UserBase):
 class BorrowBase(BaseModel):
     user_id: int
     book_id: int
+
+
+class BorrowRequestSchema(BorrowBase):
+    num_of_days: int
+
+
+class BorrowResponse(BorrowBase):
+    id: int
     borrow_date: datetime
     return_date: datetime
-
-
-class BorrowCreate(BorrowBase):
-    pass
-
-
-class BorrowSchema(BorrowBase):
-    id: int
 
     class Config:
         from_attributes = True
