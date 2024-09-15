@@ -26,7 +26,11 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 
 
-app = FastAPI()
+app = FastAPI(
+    title="Library API",
+    description="Frontend Required Endpoints for Library App for Cowrywise",
+    version="1.0.0",
+)
 
 add_exception_handlers(app)
 

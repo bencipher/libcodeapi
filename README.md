@@ -4,7 +4,7 @@ This project consists of two independent API services to manage a library. The a
 
 ## API Services Overview
 
-### 1. Frontend API
+### 1. Frontend API : http://localhost:8001/docs
 The Frontend API is used by users to interact with the library catalog and borrow books.
 
 **Endpoints:**
@@ -16,7 +16,7 @@ The Frontend API is used by users to interact with the library catalog and borro
   - By category (e.g., fiction, technology, science)
 - **Borrow Books**: Borrow books by ID and specify the number of days for which the book is borrowed.
 
-### 2. Backend/Admin API
+### 2. Backend/Admin API http://localhost:8000/docs
 The Backend/Admin API is used by an admin to manage the library catalog and view user activities.
 
 **Endpoints:**
