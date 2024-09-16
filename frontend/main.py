@@ -15,6 +15,7 @@ from frontend.crud import (
 )
 from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
+    BookCreate,
     BookFilterParams,
     BookSchema,
     BorrowRequestSchema,
@@ -82,8 +83,15 @@ async def process_new_book(message: aio_pika.IncomingMessage):
         print("Processing Queue")
         logger.info(f"Received new book message: {message.body}")
         book_data = json.loads(message.body.decode())
-        await create_book(db=get_db(), item=book_data)
-        print(f"Saved new book: {book_data['title']}")
+        try:
+            db = next(get_db())
+            validated_book = BookCreate(**book_data)
+            synced_book = create_book(db, item=validated_book)
+            print(f"Saved new book: {synced_book.title}")
+        except Exception as e:
+            logger.error(f"Error processing new book: {e}")
+        finally:
+            db.close()
 
 
 # Endpoints

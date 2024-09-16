@@ -27,6 +27,7 @@ class BookModel(BaseModel):
     isbn: str
     category: str
     total_copies: int
+    description: str
 
     class Config:
         populate_by_name = True
