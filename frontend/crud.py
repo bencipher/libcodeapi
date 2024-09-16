@@ -57,7 +57,7 @@ def create_user_record(db: Session, user: schemas.UserCreate):
 
 
 def create_book(db: Session, item: schemas.BookCreate):
-    db_item = models.Item(**item.model_dump())
+    db_item = models.Book(**item.model_dump())
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
@@ -101,7 +101,6 @@ def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
     )
 
     book.is_available = False
-    book.borrowed_until = return_date
     book.borrower_id = book_request.user_id
 
     db.add(borrow)

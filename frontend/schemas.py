@@ -8,6 +8,7 @@ class BookBase(BaseModel):
     publisher: str
     category: str
     description: str | None = None
+    isbn: str
 
 
 class BookCreate(BookBase):
