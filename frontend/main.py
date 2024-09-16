@@ -1,10 +1,13 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, status
-from fastapi.exceptions import ResponseValidationError
-from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+import json
+import logging
+import aio_pika
+from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 
 from frontend.crud import (
     borrow_book,
+    create_book,
     create_user_record,
     filter_books,
     get_book,
@@ -21,13 +24,44 @@ from frontend.schemas import (
 )
 from frontend.storage import SessionLocal
 
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime, timedelta
+from typing import List
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("INSIDE LIFESPAN")
+    logger.info("Initializing RabbitMQ connection")
+    try:
+        app.state.rabbitmq_connection = await aio_pika.connect_robust(
+            "amqp://guest:guest@internal_messaging:5672/"
+        )
+        app.state.rabbitmq_channel = await app.state.rabbitmq_connection.channel()
+        logger.info("RabbitMQ connection established successfully")
+
+        # Declare a durable queue
+        queue = await app.state.rabbitmq_channel.declare_queue(
+            "new_books", durable=True
+        )
+        await queue.consume(process_new_book)
+        logger.info("Started consuming messages from 'new_books' queue")
+    except Exception as e:
+        logger.error(f"Failed to connect to RabbitMQ: {e}")
+        raise
+
+    yield
+
+    # Cleanup
+    logger.info("Closing RabbitMQ connection")
+    await app.state.rabbitmq_connection.close()
 
 
 app = FastAPI(
     title="Library API",
+    lifespan=lifespan,
     description="Frontend Required Endpoints for Library App for Cowrywise",
     version="1.0.0",
 )
@@ -41,6 +75,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+async def process_new_book(message: aio_pika.IncomingMessage):
+    async with message.process():
+        print("Processing Queue")
+        logger.info(f"Received new book message: {message.body}")
+        book_data = json.loads(message.body.decode())
+        await create_book(db=get_db(), item=book_data)
+        print(f"Saved new book: {book_data['title']}")
 
 
 # Endpoints
