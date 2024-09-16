@@ -4,7 +4,7 @@ from typing import Optional, List
 
 class BookCreate(BaseModel):
     title: str
-    author: str
+    publisher: str
     isbn: str
     publisher: str
     category: str
@@ -13,7 +13,7 @@ class BookCreate(BaseModel):
 
 class BookUpdate(BaseModel):
     title: Optional[str] = None
-    author: Optional[str] = None
+    publisher: Optional[str] = None
     isbn: Optional[str] = None
     total_copies: Optional[int] = None
 

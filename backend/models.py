@@ -23,7 +23,7 @@ class PyObjectId(ObjectId):
 class BookModel(BaseModel):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
     title: str
-    author: str
+    publisher: str
     isbn: str
     category: str
     total_copies: int

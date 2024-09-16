@@ -21,7 +21,7 @@ async def get_book(db, book_id: str):
 
 async def update_book(db, book_id: str, book_update: BookUpdate):
     db = get_database()
-    update_data = book_update.dict(exclude_unset=True)
+    update_data = book_update.model_dump(exclude_unset=True)
     result = await db.books.update_one(
         {"_id": ObjectId(db, book_id)}, {"$set": update_data}
     )

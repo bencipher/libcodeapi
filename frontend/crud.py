@@ -57,7 +57,7 @@ def create_user_record(db: Session, user: schemas.UserCreate):
 
 
 def create_book(db: Session, item: schemas.BookCreate):
-    db_item = models.Book(**item.model_dump())
+    db_item = models.Book(**item)
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
