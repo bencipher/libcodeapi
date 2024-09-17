@@ -109,3 +109,12 @@ def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
     db.refresh(book)
 
     return borrow
+
+
+def delete_book_by_isbn(db: Session, isbn: str):
+    book = db.query(models.Book).filter(models.Book.isbn == isbn).first()
+    if book:
+        db.delete(book)
+        db.commit()
+        return True
+    return False

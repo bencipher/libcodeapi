@@ -10,7 +10,7 @@ class PyObjectId(ObjectId):
         yield cls.validate
 
     @classmethod
-    def validate(cls, v):
+    def validate(cls, v, info):
         if not ObjectId.is_valid(v):
             raise ValueError("Invalid objectid")
         return ObjectId(v)
@@ -27,7 +27,8 @@ class BookModel(BaseModel):
     isbn: str
     category: str
     total_copies: int
-    description: str
+    description: Optional[str] = None
+    total_copies: int
 
     class Config:
         populate_by_name = True

@@ -140,20 +140,37 @@ async def modify_book(book_id: str, book_update: BookUpdate, db=Depends(get_db))
 
 @app.delete("/books/{book_id}", response_model=dict)
 async def remove_book(book_id: str, db=Depends(get_db)):
+    # First, fetch the book to get its ISBN
+    book = await get_book(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Delete the book from the backend
     success = await delete_book(db, book_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Book not found")
-    return {"message": "Book successfully deleted"}
+        raise HTTPException(
+            status_code=500, detail="Failed to delete book from backend"
+        )
+
+    # Send ISBN to frontend for deletion
+    try:
+        await app.state.rabbitmq_channel.default_exchange.publish(
+            aio_pika.Message(body=book.isbn.encode()),
+            routing_key="delete_books_frontend",
+        )
+        logger.info(f"Delete message published for book ISBN: {book.isbn}")
+    except Exception as e:
+        logger.error(f"Failed to publish delete message: {e}")
+        # Note: We're not raising an exception here as the book is already deleted from the backend
+
+    return {
+        "message": "Book successfully deleted from backend and delete message sent to frontend"
+    }
 
 
 @app.get("/books/unavailable", response_model=list[BookModel])
 async def list_unavailable_books(db=Depends(get_db)):
     return await get_unavailable_books()
-
-
-@app.post("/users", response_model=str)
-async def add_user(user: UserCreate, db=Depends(get_db)):
-    return await create_user(db, user)
 
 
 @app.get("/users", response_model=list[UserModel])

@@ -9,6 +9,7 @@ from frontend.crud import (
     borrow_book,
     create_book,
     create_user_record,
+    delete_book_by_isbn,
     filter_books,
     get_book,
     get_books,
@@ -43,12 +44,19 @@ async def lifespan(app: FastAPI):
         app.state.rabbitmq_channel = await app.state.rabbitmq_connection.channel()
         logger.info("RabbitMQ connection established successfully")
 
-        # Declare a durable queue
-        queue = await app.state.rabbitmq_channel.declare_queue(
+        # Declare durable queues
+        new_books_queue = await app.state.rabbitmq_channel.declare_queue(
             "new_books", durable=True
         )
-        await queue.consume(process_new_book)
-        logger.info("Started consuming messages from 'new_books' queue")
+        delete_books_queue = await app.state.rabbitmq_channel.declare_queue(
+            "delete_books_frontend", durable=True
+        )
+        await new_books_queue.consume(process_new_book)
+        await delete_books_queue.consume(process_delete_book)
+
+        logger.info(
+            "Started consuming messages from 'new_books' and 'delete_books_frontend' queues"
+        )
     except Exception as e:
         logger.error(f"Failed to connect to RabbitMQ: {e}")
         raise
@@ -76,6 +84,24 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+async def process_delete_book(message: aio_pika.IncomingMessage):
+    async with message.process():
+        print("Processing Delete Queue")
+        logger.info(f"Received delete book message: {message.body}")
+        isbn = message.body.decode()
+        try:
+            db = next(get_db())
+            deleted = delete_book_by_isbn(db, isbn)
+            if deleted:
+                print(f"Deleted book with ISBN: {isbn}")
+            else:
+                print(f"Book with ISBN: {isbn} not found in frontend database")
+        except Exception as e:
+            logger.error(f"Error deleting book: {e}")
+        finally:
+            db.close()
 
 
 async def process_new_book(message: aio_pika.IncomingMessage):

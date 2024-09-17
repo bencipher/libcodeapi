@@ -19,7 +19,7 @@ class BookSchema(BookBase):
     id: int
     borrower_id: int | None = None
     is_available: bool
-    borrowed_until: datetime
+    borrowed_until: datetime | None = None  # to be removed
 
     class Config:
         from_attributes = True

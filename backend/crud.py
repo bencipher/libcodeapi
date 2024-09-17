@@ -12,39 +12,36 @@ async def create_book(db, book: BookCreate):
 
 
 async def get_book(db, book_id: str):
-    db = get_database()
-    book = await db.books.find_one({"_id": ObjectId(db, book_id)})
+    book = await db.books.find_one({"_id": ObjectId(book_id)})
     if book:
+        # book["_id"] = str(book["_id"])
+        # print(book)
         return BookModel(**book)
     return None
 
 
 async def update_book(db, book_id: str, book_update: BookUpdate):
-    db = get_database()
     update_data = book_update.model_dump(exclude_unset=True)
     result = await db.books.update_one(
         {"_id": ObjectId(db, book_id)}, {"$set": update_data}
     )
     if result.modified_count == 0:
         return None
-    updated_book = await db.books.find_one({"_id": ObjectId(db, book_id)})
+    updated_book = await db.books.find_one({"_id": ObjectId(book_id)})
     return BookModel(**updated_book)
 
 
 async def delete_book(db, book_id: str):
-    db = get_database()
-    result = await db.books.delete_one({"_id": ObjectId(db, book_id)})
+    result = await db.books.delete_one({"_id": ObjectId(book_id)})
     return result.deleted_count > 0
 
 
-async def get_unavailable_books():
-    db = get_database()
+async def get_unavailable_books(db):
     cursor = db.books.find({"available_copies": 0})
     return [BookModel(**book) async for book in cursor]
 
 
-async def create_user(user: UserCreate):
-    db = get_database()
+async def create_user(db, user: UserCreate):
     result = await db.users.insert_one(user.dict())
     return str(result.inserted_id)
 
