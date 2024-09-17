@@ -35,15 +35,6 @@ class UserCreate(UserBase):
     password: str
 
 
-class UserSchema(UserBase):
-    id: int
-    is_active: bool
-    borowed_books: list[BookSchema] = []
-
-    class Config:
-        from_attributes = True
-
-
 class BorrowBase(BaseModel):
     user_id: int
     book_id: int
@@ -53,10 +44,20 @@ class BorrowRequestSchema(BorrowBase):
     num_of_days: int
 
 
-class BorrowResponse(BorrowBase):
+class BorrowSchema(BorrowBase):
     id: int
     borrow_date: datetime
     return_date: datetime
+    book: Optional[BookSchema] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserSchema(UserBase):
+    id: int
+    is_active: bool
+    borrows: list[BorrowSchema] = []
 
     class Config:
         from_attributes = True

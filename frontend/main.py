@@ -14,6 +14,7 @@ from frontend.crud import (
     get_book,
     get_books,
     get_users,
+    get_users_and_borrowed_books,
 )
 from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
@@ -21,7 +22,7 @@ from frontend.schemas import (
     BookFilterParams,
     BookSchema,
     BorrowRequestSchema,
-    BorrowResponse,
+    BorrowSchema,
     UserCreate,
     UserSchema,
 )
@@ -189,7 +190,7 @@ def fetch_single_book(id: int, db: Session = Depends(get_db)):
     return book
 
 
-@app.post("/books/borrow/", response_model=BorrowResponse)
+@app.post("/books/borrow/", response_model=BorrowSchema)
 def borrow_book_item(
     borrow_request: BorrowRequestSchema, db: Session = Depends(get_db)
 ):
@@ -199,6 +200,30 @@ def borrow_book_item(
             status_code=403, detail="Book cannot be borrowed, please verify details"
         )
     return {"message": "Book borrowed successfully"}
+
+
+@app.get("/users/borrowed-books/", response_model=List[UserSchema])
+def list_users_with_borrowed_books(
+    skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
+):
+    users_with_books = get_users_and_borrowed_books(db, skip=skip, limit=limit)
+
+    logger.info(f"Number of users returned: {len(users_with_books)}")
+
+    for user in users_with_books:
+        logger.info(f"User ID: {user.id}, Username: {user.email}")
+        logger.info(f"Number of borrows: {len(user.borrows)}")
+        for borrow in user.borrows:
+            logger.info(
+                f"  Borrow ID: {borrow.id}, Book: {borrow.book.title if borrow.book else 'N/A'}"
+            )
+
+    if not users_with_books:
+        raise HTTPException(
+            status_code=404, detail="No users with borrowed books found"
+        )
+
+    return users_with_books
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 import bcrypt
@@ -118,3 +118,14 @@ def delete_book_by_isbn(db: Session, isbn: str):
         db.commit()
         return True
     return False
+
+
+def get_users_and_borrowed_books(db: Session, skip: int = 0, limit: int = 100):
+    return (
+        db.query(models.User)
+        .options(selectinload(models.User.borrows).selectinload(models.Borrow.book))
+        .distinct()
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
