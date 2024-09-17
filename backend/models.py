@@ -37,12 +37,10 @@ class BookModel(BaseModel):
 
 
 class UserModel(BaseModel):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
-    name: str
+    id: int
+    first_name: str
+    last_name: str
     email: str
     borrowed_books: List[str] = []
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    is_active: bool
+    borowed_books: list[BookModel] = []

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -174,8 +175,36 @@ async def list_unavailable_books(db=Depends(get_db)):
 
 
 @app.get("/users", response_model=list[UserModel])
-async def list_users(db=Depends(get_db)):
-    return await get_all_users(db)
+async def list_users():
+    try:
+        # Set up a queue to receive the response
+        response_queue = await app.state.rabbitmq_channel.declare_queue(
+            "", exclusive=True
+        )
+
+        # Send a message to request user data
+        await app.state.rabbitmq_channel.default_exchange.publish(
+            aio_pika.Message(body="get_users".encode(), reply_to=response_queue.name),
+            routing_key="user_data_request",
+        )
+
+        async with response_queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                async with message.process():
+                    user_data = json.loads(message.body.decode())
+                    return [UserModel(**user) for user in user_data]
+
+                # We only need one message, so we break after processing
+                break
+
+        # If we didn't receive a response within 5 seconds, raise an exception
+        await asyncio.sleep(5)
+        raise HTTPException(status_code=504, detail="Timeout waiting for user data")
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching user data: {str(e)}"
+        )
 
 
 @app.get("/users/borrowing", response_model=list[UserModel])

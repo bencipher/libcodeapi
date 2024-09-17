@@ -13,6 +13,7 @@ from frontend.crud import (
     filter_books,
     get_book,
     get_books,
+    get_users,
 )
 from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
@@ -54,9 +55,11 @@ async def lifespan(app: FastAPI):
         await new_books_queue.consume(process_new_book)
         await delete_books_queue.consume(process_delete_book)
 
-        logger.info(
-            "Started consuming messages from 'new_books' and 'delete_books_frontend' queues"
+        user_data_queue = await app.state.rabbitmq_channel.declare_queue(
+            "user_data_request"
         )
+        await user_data_queue.consume(process_user_data_request)
+        logger.info("Started consuming messages from queues")
     except Exception as e:
         logger.error(f"Failed to connect to RabbitMQ: {e}")
         raise
@@ -118,6 +121,31 @@ async def process_new_book(message: aio_pika.IncomingMessage):
             logger.error(f"Error processing new book: {e}")
         finally:
             db.close()
+
+
+async def process_user_data_request(message: aio_pika.IncomingMessage):
+    async with message.process():
+        if message.body.decode() == "get_users":
+            db = next(get_db())
+            try:
+                users = get_users(db)
+                user_data = [
+                    UserSchema.model_validate(user).model_dump() for user in users
+                ]
+                if message.reply_to:
+                    # Send the user data back to the backend
+                    await app.state.rabbitmq_channel.default_exchange.publish(
+                        aio_pika.Message(body=json.dumps(user_data).encode()),
+                        routing_key=message.reply_to,
+                    )
+                else:
+                    logger.error(
+                        "No reply_to in the original message. Cannot send response."
+                    )
+            except Exception as e:
+                logger.error(f"Error processing user data request: {str(e)}")
+            finally:
+                db.close()
 
 
 # Endpoints
