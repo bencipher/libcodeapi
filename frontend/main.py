@@ -8,7 +8,6 @@ from frontend.crud import (
     create_user_record,
     filter_books,
     get_book,
-    get_books,
 )
 from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
