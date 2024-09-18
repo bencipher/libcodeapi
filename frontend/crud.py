@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 import bcrypt
@@ -74,7 +74,6 @@ def filter_books(
     publisher: Optional[str] = None,
     availability: Optional[bool] = True,
 ):
-    print("Flterug books")
     query = db.query(models.Book)
     if category:
         query = query.filter(models.Book.category.ilike(f"%{category}%"))
@@ -133,5 +132,14 @@ def get_users_and_borrowed_books(db: Session, skip: int = 0, limit: int = 100):
         .distinct()
         .offset(skip)
         .limit(limit)
+        .all()
+    )
+
+
+def get_unavailable_books_with_return_dates(db: Session):
+    return (
+        db.query(models.Book)
+        .filter(models.Book.is_available == False)
+        .options(selectinload(models.Book.borrows))
         .all()
     )

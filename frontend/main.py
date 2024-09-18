@@ -15,6 +15,7 @@ from frontend.crud import (
     get_books,
     get_users,
     get_users_and_borrowed_books,
+    get_unavailable_books_with_return_dates,
 )
 from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
@@ -26,6 +27,7 @@ from frontend.schemas import (
     UserCreate,
     UserSchema,
     custom_json_dumps,
+    BookUnavailableSchema,
 )
 from frontend.storage import SessionLocal
 
@@ -138,12 +140,23 @@ async def process_book_data_request(message: aio_pika.IncomingMessage):
             if action == "get_unavailable_books":
                 db = next(get_db())
                 try:
-                    unavailable_books = filter_books(db, availability=False)
-                    book_data = [
-                        BookSchema.model_validate(book).model_dump()
-                        for book in unavailable_books
-                    ]
-                    response_data = json.dumps(book_data)
+                    unavailable_books = get_unavailable_books_with_return_dates(db)
+                    book_data = []
+                    for book in unavailable_books:
+                        book_dict = BookSchema.model_validate(book).model_dump()
+                        if book.borrows:
+                            latest_borrow = max(
+                                book.borrows, key=lambda b: b.return_date
+                            )
+                            book_dict["expected_return_date"] = (
+                                latest_borrow.return_date
+                            )
+                        else:
+                            book_dict["expected_return_date"] = None
+                        book_data.append(
+                            BookUnavailableSchema(**book_dict).model_dump()
+                        )
+                    response_data = json.dumps(book_data, default=str)
                     logger.info(f"Sending data for {len(book_data)} unavailable books")
                 except Exception as e:
                     logger.error(f"Error getting unavailable books: {str(e)}")

@@ -78,3 +78,7 @@ class UserSchema(UserBase):
 class BookFilterParams(BaseModel):
     publisher: Optional[str] = Field(None, min_length=1, max_length=100)
     category: Optional[str] = Field(None, min_length=1, max_length=50)
+
+
+class BookUnavailableSchema(BookSchema):
+    expected_return_date: datetime | None
