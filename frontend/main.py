@@ -54,13 +54,17 @@ async def lifespan(app: FastAPI):
         delete_books_queue = await app.state.rabbitmq_channel.declare_queue(
             "delete_books_frontend", durable=True
         )
-        await new_books_queue.consume(process_new_book)
-        await delete_books_queue.consume(process_delete_book)
 
         user_data_queue = await app.state.rabbitmq_channel.declare_queue(
             "user_data_request"
         )
+        book_data_queue = await app.state.rabbitmq_channel.declare_queue(
+            "book_data_request"
+        )
+        await new_books_queue.consume(process_new_book)
+        await delete_books_queue.consume(process_delete_book)
         await user_data_queue.consume(process_user_data_request)
+        await book_data_queue.consume(process_book_data_request)
         logger.info("Started consuming messages from queues")
     except Exception as e:
         logger.error(f"Failed to connect to RabbitMQ: {e}")
@@ -123,6 +127,54 @@ async def process_new_book(message: aio_pika.IncomingMessage):
             logger.error(f"Error processing new book: {e}")
         finally:
             db.close()
+
+
+async def process_book_data_request(message: aio_pika.IncomingMessage):
+    async with message.process():
+        try:
+            request_data = json.loads(message.body.decode())
+            action = request_data.get("action")
+
+            if action == "get_unavailable_books":
+                db = next(get_db())
+                try:
+                    unavailable_books = filter_books(db, availability=False)
+                    book_data = [
+                        BookSchema.model_validate(book).model_dump()
+                        for book in unavailable_books
+                    ]
+                    response_data = json.dumps(book_data)
+                    logger.info(f"Sending data for {len(book_data)} unavailable books")
+                except Exception as e:
+                    logger.error(f"Error getting unavailable books: {str(e)}")
+                    response_data = json.dumps(
+                        {"error": f"Error getting unavailable books: {str(e)}"}
+                    )
+                finally:
+                    db.close()
+            else:
+                logger.warning(f"Unknown action received: {action}")
+                response_data = json.dumps({"error": f"Unknown action: {action}"})
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            response_data = json.dumps(
+                {"error": f"Invalid JSON in message body: {str(e)}"}
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error in process_book_data_request: {str(e)}")
+            response_data = json.dumps({"error": f"Unexpected error: {str(e)}"})
+
+        if message.reply_to:
+            await app.state.rabbitmq_channel.default_exchange.publish(
+                aio_pika.Message(
+                    body=response_data.encode(), correlation_id=message.correlation_id
+                ),
+                routing_key=message.reply_to,
+            )
+            logger.info(f"Response sent to {message.reply_to}")
+        else:
+            logger.error("No reply_to in the original message. Cannot send response.")
 
 
 async def process_user_data_request(message: aio_pika.IncomingMessage):

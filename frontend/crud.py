@@ -69,13 +69,19 @@ def get_book(db: Session, book_id: int):
 
 
 def filter_books(
-    db: Session, category: Optional[str] = None, publisher: Optional[str] = None
+    db: Session,
+    category: Optional[str] = None,
+    publisher: Optional[str] = None,
+    availability: Optional[bool] = True,
 ):
+    print("Flterug books")
     query = db.query(models.Book)
     if category:
         query = query.filter(models.Book.category.ilike(f"%{category}%"))
     if publisher:
         query = query.filter(models.Book.publisher.ilike(f"%{publisher}%"))
+    if not availability:
+        query = query.filter(models.Book.is_available == False)
     return query.all()
 
 

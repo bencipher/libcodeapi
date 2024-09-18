@@ -245,10 +245,38 @@ async def list_users_with_borrowed_books(skip: int = 0, limit: int = 100):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/")
-async def root(db=Depends(get_db)):
-    db()
-    return {"message": "Welcome to the Library Backend API"}
+@app.get("/unavailable-books")
+async def root(skip: int = 0, limit: int = 100):
+    try:
+        # Prepare the message
+        message_body = json.dumps(
+            {"action": "get_unavailable_books", "skip": skip, "limit": limit}
+        )
+
+        # Create a message
+        message = aio_pika.Message(
+            body=message_body.encode(),
+            reply_to="unavailable_books_response",  # Queue to receive the response
+        )
+
+        # Send the message to the backend
+        await app.state.rabbitmq_channel.default_exchange.publish(
+            message, routing_key="book_data_request"
+        )
+
+        # Wait for the response
+        response_queue = await app.state.rabbitmq_channel.declare_queue(
+            "unavailable_books_response", auto_delete=True
+        )
+        async with response_queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                async with message.process():
+                    response_data = json.loads(message.body.decode())
+                    return response_data
+
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/test")
