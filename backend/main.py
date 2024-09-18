@@ -184,14 +184,18 @@ async def list_users():
 
         # Send a message to request user data
         await app.state.rabbitmq_channel.default_exchange.publish(
-            aio_pika.Message(body="get_users".encode(), reply_to=response_queue.name),
+            aio_pika.Message(
+                body=json.dumps({"action": "get_users"}).encode(),
+                reply_to=response_queue.name,
+            ),
             routing_key="user_data_request",
         )
-
         async with response_queue.iterator() as queue_iter:
             async for message in queue_iter:
                 async with message.process():
                     user_data = json.loads(message.body.decode())
+                    print("Trying to decode the received user objects")
+                    print(f"{user_data=}")
                     return [UserModel(**user) for user in user_data]
 
                 # We only need one message, so we break after processing
@@ -207,9 +211,38 @@ async def list_users():
         )
 
 
-@app.get("/users/borrowing", response_model=list[UserModel])
-async def list_user_borrowing_activities(db=Depends(get_db)):
-    return await get_user_borrowing_activities(db)
+@app.get("/users/borrowed-books/")
+async def list_users_with_borrowed_books(skip: int = 0, limit: int = 100):
+    try:
+        # Prepare the message
+        message_body = json.dumps(
+            {"action": "get_users_with_borrowed_books", "skip": skip, "limit": limit}
+        )
+
+        # Create a message
+        message = aio_pika.Message(
+            body=message_body.encode(),
+            reply_to="users_borrowed_books_response",  # Queue to receive the response
+        )
+
+        # Send the message to the backend
+        await app.state.rabbitmq_channel.default_exchange.publish(
+            message, routing_key="user_data_request"
+        )
+
+        # Wait for the response
+        response_queue = await app.state.rabbitmq_channel.declare_queue(
+            "users_borrowed_books_response", auto_delete=True
+        )
+        async with response_queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                async with message.process():
+                    response_data = json.loads(message.body.decode())
+                    return response_data
+
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/")

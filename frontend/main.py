@@ -25,6 +25,7 @@ from frontend.schemas import (
     BorrowSchema,
     UserCreate,
     UserSchema,
+    custom_json_dumps,
 )
 from frontend.storage import SessionLocal
 
@@ -126,27 +127,87 @@ async def process_new_book(message: aio_pika.IncomingMessage):
 
 async def process_user_data_request(message: aio_pika.IncomingMessage):
     async with message.process():
-        if message.body.decode() == "get_users":
-            db = next(get_db())
-            try:
-                users = get_users(db)
-                user_data = [
-                    UserSchema.model_validate(user).model_dump() for user in users
-                ]
-                if message.reply_to:
-                    # Send the user data back to the backend
-                    await app.state.rabbitmq_channel.default_exchange.publish(
-                        aio_pika.Message(body=json.dumps(user_data).encode()),
-                        routing_key=message.reply_to,
-                    )
+        try:
+            message_body = message.body.decode()
+            logger.info(f"Received message body: {message_body}")
+
+            if not message_body:
+                logger.error("Received empty message body")
+                response_data = json.dumps({"error": "Empty message received"})
+            else:
+                request_data = json.loads(message_body)
+                action = request_data.get("action")
+
+                if action == "get_users":
+                    db = next(get_db())
+                    try:
+                        users = get_users(db)
+                        user_data = [
+                            UserSchema.model_validate(user).model_dump()
+                            for user in users
+                        ]
+                        response_data = custom_json_dumps(user_data)
+                        logger.info(
+                            f"Sending user data: {response_data[:100]}..."
+                        )  # Log first 100 chars
+                    except Exception as e:
+                        logger.error(f"Error processing user data request: {str(e)}")
+                        response_data = json.dumps(
+                            {"error": f"Error getting users: {str(e)}"}
+                        )
+                    finally:
+                        db.close()
+
+                elif action == "get_users_with_borrowed_books":
+                    db = next(get_db())
+                    try:
+                        skip = request_data.get("skip", 0)
+                        limit = request_data.get("limit", 100)
+                        users_with_books = get_users_and_borrowed_books(
+                            db, skip=skip, limit=limit
+                        )
+                        response_data = custom_json_dumps(
+                            [
+                                UserSchema.model_validate(user).model_dump()
+                                for user in users_with_books
+                            ]
+                        )
+                        logger.info(
+                            f"Sending users with borrowed books data: {response_data[:100]}..."
+                        )  # Log first 100 chars
+                    except Exception as e:
+                        logger.error(
+                            f"Error processing users with borrowed books request: {str(e)}"
+                        )
+                        response_data = json.dumps(
+                            {
+                                "error": f"Error getting users with borrowed books: {str(e)}"
+                            }
+                        )
+                    finally:
+                        db.close()
+
                 else:
-                    logger.error(
-                        "No reply_to in the original message. Cannot send response."
-                    )
-            except Exception as e:
-                logger.error(f"Error processing user data request: {str(e)}")
-            finally:
-                db.close()
+                    response_data = json.dumps({"error": f"Unknown action: {action}"})
+                    logger.error(f"Unknown action received: {action}")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            response_data = json.dumps(
+                {"error": f"Invalid JSON in message body: {str(e)}"}
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error in process_user_data_request: {str(e)}")
+            response_data = json.dumps({"error": f"Unexpected error: {str(e)}"})
+
+        if message.reply_to:
+            await app.state.rabbitmq_channel.default_exchange.publish(
+                aio_pika.Message(body=response_data.encode()),
+                routing_key=message.reply_to,
+            )
+            logger.info(f"Response sent to {message.reply_to}")
+        else:
+            logger.error("No reply_to in the original message. Cannot send response.")
 
 
 # Endpoints
@@ -202,28 +263,28 @@ def borrow_book_item(
     return {"message": "Book borrowed successfully"}
 
 
-@app.get("/users/borrowed-books/", response_model=List[UserSchema])
-def list_users_with_borrowed_books(
-    skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
-):
-    users_with_books = get_users_and_borrowed_books(db, skip=skip, limit=limit)
+# @app.get("/users/borrowed-books/", response_model=List[UserSchema])
+# def list_users_with_borrowed_books(
+#     skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
+# ):
+#     users_with_books = get_users_and_borrowed_books(db, skip=skip, limit=limit)
 
-    logger.info(f"Number of users returned: {len(users_with_books)}")
+#     logger.info(f"Number of users returned: {len(users_with_books)}")
 
-    for user in users_with_books:
-        logger.info(f"User ID: {user.id}, Username: {user.email}")
-        logger.info(f"Number of borrows: {len(user.borrows)}")
-        for borrow in user.borrows:
-            logger.info(
-                f"  Borrow ID: {borrow.id}, Book: {borrow.book.title if borrow.book else 'N/A'}"
-            )
+#     for user in users_with_books:
+#         logger.info(f"User ID: {user.id}, Username: {user.email}")
+#         logger.info(f"Number of borrows: {len(user.borrows)}")
+#         for borrow in user.borrows:
+#             logger.info(
+#                 f"  Borrow ID: {borrow.id}, Book: {borrow.book.title if borrow.book else 'N/A'}"
+#             )
 
-    if not users_with_books:
-        raise HTTPException(
-            status_code=404, detail="No users with borrowed books found"
-        )
+#     if not users_with_books:
+#         raise HTTPException(
+#             status_code=404, detail="No users with borrowed books found"
+#         )
 
-    return users_with_books
+#     return users_with_books
 
 
 if __name__ == "__main__":
