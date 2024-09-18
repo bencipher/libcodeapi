@@ -1,6 +1,14 @@
 from datetime import datetime
+import json
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 
 class BookBase(BaseModel):
@@ -19,7 +27,6 @@ class BookSchema(BookBase):
     id: int
     borrower_id: int | None = None
     is_available: bool
-    borrowed_until: datetime | None = None  # to be removed
 
     class Config:
         from_attributes = True
@@ -46,12 +53,17 @@ class BorrowRequestSchema(BorrowBase):
 
 class BorrowSchema(BorrowBase):
     id: int
-    borrow_date: datetime
-    return_date: datetime
+    borrow_date: Optional[datetime] = None
+    return_date: datetime = None
     book: Optional[BookSchema] = None
 
     class Config:
         from_attributes = True
+        json_encoders = {datetime: lambda v: v.isoformat() if v else None}
+
+
+def custom_json_dumps(obj: Any) -> str:
+    return json.dumps(obj, cls=DateTimeEncoder)
 
 
 class UserSchema(UserBase):
