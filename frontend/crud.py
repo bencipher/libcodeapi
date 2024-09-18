@@ -1,22 +1,16 @@
 from datetime import datetime, timedelta, timezone
-import logging
+from typing import List, Optional
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List, Optional
 import bcrypt
 
-from frontend import models, schemas
-from frontend.exceptions import (
-    BookNotAvailableError,
+from . import models, schemas
+from .exceptions import (
     BookNotFoundError,
     UserNotFoundError,
     DatabaseError,
+    BookNotAvailableError,
 )
-
-# Set up logging
-logging.basicConfig(level=logging.ERROR)
-logger = logging.getLogger(__name__)
-
 
 def filter_books(
     db: Session,
@@ -37,7 +31,7 @@ def filter_books(
         raise DatabaseError("filter", str(e))
 
 
-def get_user_by_id(db: Session, user_id: int):
+def get_user_by_id(db: Session, user_id: int) -> models.User:
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if user is None:
@@ -47,7 +41,7 @@ def get_user_by_id(db: Session, user_id: int):
         raise DatabaseError("fetch", str(e))
 
 
-def get_user_by_email(db: Session, email: str):
+def get_user_by_email(db: Session, email: str) -> models.User:
     try:
         user = db.query(models.User).filter(models.User.email == email).first()
         if user is None:
@@ -57,14 +51,14 @@ def get_user_by_email(db: Session, email: str):
         raise DatabaseError("fetch", str(e))
 
 
-def get_users(db: Session, skip: int = 0, limit: int = 100):
+def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[models.User]:
     try:
         return db.query(models.User).offset(skip).limit(limit).all()
     except SQLAlchemyError as e:
         raise DatabaseError("fetch", str(e))
 
 
-def create_user_record(db: Session, user: schemas.UserCreate):
+def create_user_record(db: Session, user: schemas.UserCreate) -> models.User:
     try:
         hashed_password = bcrypt.hashpw(user.password.encode("utf-8"), bcrypt.gensalt())
         db_user = models.User(
@@ -82,7 +76,7 @@ def create_user_record(db: Session, user: schemas.UserCreate):
         raise DatabaseError("create", str(e))
 
 
-def create_book(db: Session, item: schemas.BookCreate):
+def create_book(db: Session, item: schemas.BookCreate) -> models.Book:
     try:
         db_item = models.Book(**item.model_dump())
         db.add(db_item)
@@ -94,7 +88,7 @@ def create_book(db: Session, item: schemas.BookCreate):
         raise DatabaseError("create", str(e))
 
 
-def get_book(db: Session, book_id: int):
+def get_book(db: Session, book_id: int) -> models.Book:
     try:
         book = db.query(models.Book).filter(models.Book.id == book_id).first()
         if book is None:
@@ -104,7 +98,9 @@ def get_book(db: Session, book_id: int):
         raise DatabaseError("fetch", str(e))
 
 
-def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
+def borrow_book(
+    db: Session, book_request: schemas.BorrowRequestSchema
+) -> models.Borrow:
     try:
         book = get_book(db, book_request.book_id)
         if not book.is_available:
@@ -136,7 +132,7 @@ def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
         raise DatabaseError("borrow", str(e))
 
 
-def delete_book_by_isbn(db: Session, isbn: str):
+def delete_book_by_isbn(db: Session, isbn: str) -> bool:
     try:
         book = db.query(models.Book).filter(models.Book.isbn == isbn).first()
         if not book:
@@ -149,7 +145,9 @@ def delete_book_by_isbn(db: Session, isbn: str):
         raise DatabaseError("delete", str(e))
 
 
-def get_users_and_borrowed_books(db: Session, skip: int = 0, limit: int = 100):
+def get_users_and_borrowed_books(
+    db: Session, skip: int = 0, limit: int = 100
+) -> List[models.User]:
     try:
         return (
             db.query(models.User)
@@ -163,7 +161,7 @@ def get_users_and_borrowed_books(db: Session, skip: int = 0, limit: int = 100):
         raise DatabaseError("fetch", str(e))
 
 
-def get_unavailable_books_with_return_dates(db: Session):
+def get_unavailable_books_with_return_dates(db: Session) -> List[models.Book]:
     try:
         return (
             db.query(models.Book)

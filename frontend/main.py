@@ -61,7 +61,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.get("/books/", response_model=List[BookSchema], status_code=status.HTTP_200_OK)
 def list_books(db: Session = Depends(get_db)):
-    books = get_books(db)
+    books = filter_books(db)
     if books is None:
         raise HTTPException(
             status_code=500, detail="An error occurred while fetching books"
