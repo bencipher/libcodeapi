@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from frontend.crud import (
     borrow_book,
-    create_book,
     create_user_record,
     filter_books,
     get_book,
@@ -13,7 +12,6 @@ from frontend.crud import (
 )
 from frontend.exceptions import add_exception_handlers
 from frontend.schemas import (
-    BookCreate,
     BookFilterParams,
     BookSchema,
     BorrowRequestSchema,
