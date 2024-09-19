@@ -79,7 +79,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 async def library_exception_handler(request: Request, exc: LibraryException):
     logger.error(f"Library error: {str(exc)}")
     return JSONResponse(
-        status_code=400,
+        status_code=403,
         content={"detail": str(exc)},
     )
 

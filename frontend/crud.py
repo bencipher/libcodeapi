@@ -128,6 +128,7 @@ def borrow_book(
 
         return borrow
     except SQLAlchemyError as e:
+        print(str(e))
         db.rollback()
         raise DatabaseError("borrow", str(e))
 
