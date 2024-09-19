@@ -1,10 +1,15 @@
-import contextlib
+import os
 import json
+import contextlib
 import logging
 from typing import Callable, Any
 import aio_pika
 from fastapi import FastAPI
-from sqlalchemy.orm import Session
+
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from frontend.crud import (
     delete_book_by_isbn,
@@ -171,7 +176,7 @@ class RabbitMQManager:
         logger.info("Initializing RabbitMQ connection")
         try:
             self.app.state.rabbitmq_connection = await aio_pika.connect_robust(
-                "amqp://guest:guest@internal_messaging:5672/"
+                os.getenv("RABBIT_MQ_CONN_STR")
             )
             self.app.state.rabbitmq_channel = (
                 await self.app.state.rabbitmq_connection.channel()

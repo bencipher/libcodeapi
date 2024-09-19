@@ -1,7 +1,9 @@
+import os
 from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 from frontend.crud import (
     borrow_book,
@@ -27,6 +29,7 @@ from typing import List
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not app.state.testing:
@@ -106,6 +109,6 @@ def borrow_book_item(
 if __name__ == "__main__":
     import uvicorn
 
-    port = 8001
+    port = os.getenv("FRONTEND_PORT")
     print(f"Starting frontend server on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
