@@ -2,6 +2,13 @@
 
 This project consists of two independent API services to manage a library. The application allows users to browse through a catalog of books and borrow them. The project is structured into two separate APIs: one for frontend users and another for backend admin operations.
 
+## Test Credentials (.env)
+
+- FRONTEND_PORT=8001
+- BACKEND_PORT=8000
+- SQLALCHEMY_DATABASE_URL=postgresql://user:password@postgres:5432/library
+- RABBIT_MQ_CONN_STR=amqp://guest:guest@internal_messaging:5672/
+
 ## API Services Overview
 
 ### 1. Frontend API : http://localhost:8001/docs
@@ -35,3 +42,4 @@ The Backend/Admin API is used by an admin to manage the library catalog and view
 - The two services should use different data stores.
 - Implement a way to communicate changes between the two services (e.g., when the admin adds a book via the Backend API, the Frontend API should be updated with the latest book information).
 - The project should be deployed using Docker contai
+
