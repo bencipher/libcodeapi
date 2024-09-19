@@ -1,3 +1,4 @@
+import os
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -6,9 +7,12 @@ from frontend.main import app, get_db
 from frontend.models import Base
 from frontend.crud import create_user_record, create_book
 from frontend.schemas import UserCreate, BookCreate
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Use an in-memory SQLite database for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = os.getenv("TEST_DB_URL")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
@@ -34,22 +38,22 @@ def db_session():
         Base.metadata.drop_all(bind=engine)
 
 
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-
 @pytest.fixture(scope="module")
 def client():
     app.state.testing = True
+
+    def override_get_db():
+        try:
+            db = TestingSessionLocal()
+            yield db
+        finally:
+            db.close()
+
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
         yield c
-    app.state.testing = False
     app.dependency_overrides.clear()
+    app.state.testing = False
 
 
 @pytest.fixture(scope="function")

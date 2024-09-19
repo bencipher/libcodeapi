@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import bcrypt
 
 from . import models, schemas
-from .exceptions import (
+from exceptions.exceptions import (
     BookNotFoundError,
     UserNotFoundError,
     DatabaseError,

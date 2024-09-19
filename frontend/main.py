@@ -11,7 +11,7 @@ from frontend.crud import (
     filter_books,
     get_book,
 )
-from frontend.exceptions import add_exception_handlers
+from exceptions.exceptions import add_exception_handlers
 from frontend.schemas import (
     BookFilterParams,
     BookSchema,
@@ -28,10 +28,12 @@ from typing import List
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 load_dotenv()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.testing = app.state.testing if hasattr(app.state, "testing") else False
+
     if not app.state.testing:
         await setup_messaging(app)
     yield
