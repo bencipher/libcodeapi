@@ -282,6 +282,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db_user = create_user_record(db, user)
         return db_user
     except ValueError as e:
+        logger.error(msg=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -316,7 +317,7 @@ def fetch_single_book(id: int, db: Session = Depends(get_db)):
     return book
 
 
-@app.post("/books/borrow/", response_model=BorrowSchema)
+@app.post("/books/borrow/", response_model=BorrowSchema, status_code=status.HTTP_200_OK)
 def borrow_book_item(
     borrow_request: BorrowRequestSchema, db: Session = Depends(get_db)
 ):
@@ -325,7 +326,7 @@ def borrow_book_item(
         raise HTTPException(
             status_code=403, detail="Book cannot be borrowed, please verify details"
         )
-    return {"message": "Book borrowed successfully"}
+    return borrow_task
 
 
 # @app.get("/users/borrowed-books/", response_model=List[UserSchema])

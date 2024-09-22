@@ -82,7 +82,7 @@ async def book_not_available_exception_handler(
 ):
     logger.error(f"Book not available: {exc}")
     return JSONResponse(
-        status_code=400,
+        status_code=403,
         content={"detail": str(exc)},
     )
 

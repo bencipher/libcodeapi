@@ -95,6 +95,11 @@ def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
     if not user:
         raise UserNotFoundError(book_request.user_id)
 
+        return borrow
+    except SQLAlchemyError as e:
+        print(str(e))
+        db.rollback()
+        raise DatabaseError("borrow", str(e))
     borrow_date = datetime.now(timezone.utc)
     return_date = borrow_date + timedelta(days=book_request.num_of_days)
 
