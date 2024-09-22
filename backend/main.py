@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from dotenv import load_dotenv
 from backend.internal_messaging import (
     cleanup_messaging,
+    publish_and_get_response,
     publish_delete_book,
     publish_new_book,
     request_book_data,
@@ -66,7 +67,7 @@ async def add_book(book: BookCreate, db=Depends(get_db)):
 
     new_book.pop("total_copies", None)
     try:
-        await publish_new_book(new_book)
+        await publish_and_get_response("new_books", new_book)
         logger.info(f"Successfully published book to RabbitMQ: {new_book['title']}")
     except Exception as e:
         logger.error(f"Error publishing to RabbitMQ: {e}")
@@ -92,7 +93,7 @@ async def remove_book(book_id: str, db=Depends(get_db)):
         )
 
     try:
-        await publish_delete_book(book.isbn)
+        await publish_and_get_response("delete_books_backend", book.isbn)
         logger.info(f"Delete message published for book ISBN: {book.isbn}")
     except Exception as e:
         logger.error(f"Failed to publish delete message: {e}")
@@ -105,7 +106,8 @@ async def remove_book(book_id: str, db=Depends(get_db)):
 @app.get("/users", response_model=list[UserModel])
 async def list_users():
     try:
-        response = await request_user_data("get_users")
+        data = {"action": "get_users"}
+        response = await publish_and_get_response("user_data_request", data)
         return [UserModel(**user) for user in response]
     except Exception as e:
         raise HTTPException(
@@ -115,9 +117,8 @@ async def list_users():
 @app.get("/users/borrowed-books/")
 async def list_users_with_borrowed_books(skip: int = 0, limit: int = 100):
     try:
-        response = await request_user_data(
-            "get_users_with_borrowed_books", skip=skip, limit=limit
-        )
+        data = {"action": "get_users_with_borrowed_books", "skip": skip, "limit": limit}
+        response = await publish_and_get_response("user_data_request", data)
         return response
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
@@ -126,19 +127,12 @@ async def list_users_with_borrowed_books(skip: int = 0, limit: int = 100):
 @app.get("/unavailable-books")
 async def root(skip: int = 0, limit: int = 100):
     try:
-        response = await request_book_data(
-            "get_unavailable_books", skip=skip, limit=limit
-        )
+        data = {"action": "get_unavailable_books", "skip": skip, "limit": limit}
+        response = await publish_and_get_response("book_data_request", data)
         return response
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/test")
-async def root(db=Depends(get_db)):
-    await db.some_collection.insert_one({"test": "data"})
-    return {"message": "Data inserted into the database"}
 
 
 if __name__ == "__main__":
