@@ -5,12 +5,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 import bcrypt
 
-from frontend import models, schemas
-from frontend.exceptions import (
+from exceptions.exceptions import (
     BookNotAvailableError,
     BookNotFoundError,
+    DatabaseError,
     UserNotFoundError,
 )
+from frontend import models, schemas
+
 
 # Set up logging
 logging.basicConfig(level=logging.ERROR)
@@ -85,17 +87,18 @@ def filter_books(
 
 
 def borrow_book(db: Session, book_request: schemas.BorrowRequestSchema):
-    book = get_book(db, book_request.book_id)
-    if not book:
-        raise BookNotFoundError(book_request.book_id)
-    if not book.is_available:
-        raise BookNotAvailableError(book_request.book_id)
+    try:
+        book = get_book(db, book_request.book_id)
+        if not book:
+            raise BookNotFoundError(book_request.book_id)
+        if not book.is_available:
+            raise BookNotAvailableError(book_request.book_id)
 
-    user = get_user_by_id(db, book_request.user_id)
-    if not user:
-        raise UserNotFoundError(book_request.user_id)
+        user = get_user_by_id(db, book_request.user_id)
+        if not user:
+            raise UserNotFoundError(book_request.user_id)
 
-        return borrow
+            return borrow
     except SQLAlchemyError as e:
         print(str(e))
         db.rollback()

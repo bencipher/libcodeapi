@@ -5,6 +5,7 @@ import aio_pika
 from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 
+from exceptions.exceptions import add_exception_handlers
 from frontend.crud import (
     borrow_book,
     create_book,
@@ -17,7 +18,7 @@ from frontend.crud import (
     get_users_and_borrowed_books,
     get_unavailable_books_with_return_dates,
 )
-from frontend.exceptions import add_exception_handlers
+from frontend.messages.rabbit_processes import setup_messaging
 from frontend.schemas import (
     BookCreate,
     BookFilterParams,
@@ -41,42 +42,45 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("INSIDE LIFESPAN")
-    logger.info("Initializing RabbitMQ connection")
-    try:
-        app.state.rabbitmq_connection = await aio_pika.connect_robust(
-            "amqp://guest:guest@internal_messaging:5672/"
-        )
-        app.state.rabbitmq_channel = await app.state.rabbitmq_connection.channel()
-        logger.info("RabbitMQ connection established successfully")
+    app.state.testing = app.state.testing if hasattr(app.state, "testing") else False
+    if not app.state.testing:
+        # setup_messaging(app)
+        try:
+            app.state.rabbitmq_connection = await aio_pika.connect_robust(
+                "amqp://guest:guest@internal_messaging:5672/"
+            )
+            app.state.rabbitmq_channel = await app.state.rabbitmq_connection.channel()
+            logger.info("RabbitMQ connection established successfully")
 
-        # Declare durable queues
-        new_books_queue = await app.state.rabbitmq_channel.declare_queue(
-            "new_books", durable=True
-        )
-        delete_books_queue = await app.state.rabbitmq_channel.declare_queue(
-            "delete_books_frontend", durable=True
-        )
+            # Declare durable queues
+            new_books_queue = await app.state.rabbitmq_channel.declare_queue(
+                "new_books", durable=True
+            )
+            delete_books_queue = await app.state.rabbitmq_channel.declare_queue(
+                "delete_books_frontend", durable=True
+            )
 
-        user_data_queue = await app.state.rabbitmq_channel.declare_queue(
-            "user_data_request"
-        )
-        book_data_queue = await app.state.rabbitmq_channel.declare_queue(
-            "book_data_request"
-        )
-        await new_books_queue.consume(process_new_book)
-        await delete_books_queue.consume(process_delete_book)
-        await user_data_queue.consume(process_user_data_request)
-        await book_data_queue.consume(process_book_data_request)
-        logger.info("Started consuming messages from queues")
-    except Exception as e:
-        logger.error(f"Failed to connect to RabbitMQ: {e}")
-        raise
-
+            user_data_queue = await app.state.rabbitmq_channel.declare_queue(
+                "user_data_request"
+            )
+            book_data_queue = await app.state.rabbitmq_channel.declare_queue(
+                "book_data_request"
+            )
+            await new_books_queue.consume(process_new_book)
+            await delete_books_queue.consume(process_delete_book)
+            await user_data_queue.consume(process_user_data_request)
+            await book_data_queue.consume(process_book_data_request)
+            logger.info("Started consuming messages from queues")
+        except Exception as e:
+            logger.error(f"Failed to connect to RabbitMQ: {e}")
+            raise
     yield
+    if not app.state.testing:
+        logger.info("Closing RabbitMQ connection")
+        app.state.rabbitmq_connection.close()
 
-    # Cleanup
-    logger.info("Closing RabbitMQ connection")
-    await app.state.rabbitmq_connection.close()
+    # if not app.state.testing:
+    #     logger.info("Initializing RabbitMQ connection")
 
 
 app = FastAPI(
