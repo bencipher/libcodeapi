@@ -169,9 +169,9 @@ async def remove_book(book_id: str, db=Depends(get_db)):
     }
 
 
-@app.get("/books/unavailable", response_model=list[BookModel])
-async def list_unavailable_books(db=Depends(get_db)):
-    return await get_unavailable_books()
+# @app.get("/books/unavailable", response_model=list[BookModel])
+# async def list_unavailable_books(db=Depends(get_db)):
+#     return await get_unavailable_books()
 
 
 @app.get("/users", response_model=list[UserModel])
