@@ -1,4 +1,3 @@
-import sys
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -19,7 +18,6 @@ from frontend.crud import (
     get_users_and_borrowed_books,
     get_unavailable_books_with_return_dates,
 )
-from frontend.messages.rabbit_processes import setup_messaging
 from frontend.schemas import (
     BookCreate,
     BookFilterParams,
@@ -35,8 +33,6 @@ from frontend.storage import SessionLocal
 
 from typing import List
 
-sys.path.append("../src")
-from rabbmq import post_message
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +44,6 @@ async def lifespan(app: FastAPI):
     print("INSIDE LIFESPAN")
     app.state.testing = app.state.testing if hasattr(app.state, "testing") else False
     if not app.state.testing:
-        # setup_messaging(app)
         try:
             app.state.rabbitmq_connection = await aio_pika.connect_robust(
                 "amqp://guest:guest@internal_messaging:5672/"
@@ -82,9 +77,6 @@ async def lifespan(app: FastAPI):
     if not app.state.testing:
         logger.info("Closing RabbitMQ connection")
         app.state.rabbitmq_connection.close()
-
-    # if not app.state.testing:
-    #     logger.info("Initializing RabbitMQ connection")
 
 
 app = FastAPI(
@@ -139,149 +131,98 @@ async def process_new_book(message: aio_pika.IncomingMessage):
             db.close()
 
 
-async def process_book_data_request(message: aio_pika.IncomingMessage):
+async def process_user_data_request(message: aio_pika.IncomingMessage):
     async with message.process():
         try:
             request_data = json.loads(message.body.decode())
             action = request_data.get("action")
+            db = next(get_db())
 
-            if action == "get_unavailable_books":
-                db = next(get_db())
-                try:
-                    unavailable_books = get_unavailable_books_with_return_dates(db)
-                    book_data = []
-                    for book in unavailable_books:
-                        book_dict = BookSchema.model_validate(book).model_dump()
-                        if book.borrows:
-                            latest_borrow = max(
-                                book.borrows, key=lambda b: b.return_date
-                            )
-                            book_dict["expected_return_date"] = (
-                                latest_borrow.return_date
-                            )
-                        else:
-                            book_dict["expected_return_date"] = None
-                        book_data.append(
-                            BookUnavailableSchema(**book_dict).model_dump()
-                        )
-                    response_data = json.dumps(book_data, default=str)
-                    logger.info(f"Sending data for {len(book_data)} unavailable books")
-                except Exception as e:
-                    logger.error(f"Error getting unavailable books: {str(e)}")
-                    response_data = json.dumps(
-                        {"error": f"Error getting unavailable books: {str(e)}"}
-                    )
-                finally:
-                    db.close()
+            if action == "get_users":
+                users = get_users(db)
+                response_data = [
+                    UserSchema.model_validate(user).model_dump() for user in users
+                ]
+            elif action == "get_users_with_borrowed_books":
+                skip = request_data.get("skip", 0)
+                limit = request_data.get("limit", 100)
+                users_with_books = get_users_and_borrowed_books(
+                    db, skip=skip, limit=limit
+                )
+                response_data = [
+                    UserSchema.model_validate(user).model_dump()
+                    for user in users_with_books
+                ]
             else:
-                logger.warning(f"Unknown action received: {action}")
-                response_data = json.dumps({"error": f"Unknown action: {action}"})
+                raise ValueError(f"Unknown action: {action}")
+
+            response_json = custom_json_dumps(response_data)
+            logger.info(
+                f"Sending {action} data: {response_json[:100]}..."
+            )  # Log first 100 chars
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {str(e)}")
-            response_data = json.dumps(
+            response_json = json.dumps(
                 {"error": f"Invalid JSON in message body: {str(e)}"}
             )
         except Exception as e:
-            logger.error(f"Unexpected error in process_book_data_request: {str(e)}")
-            response_data = json.dumps({"error": f"Unexpected error: {str(e)}"})
+            logger.error(f"Error processing {action} request: {str(e)}")
+            response_json = json.dumps({"error": f"Error processing request: {str(e)}"})
+        finally:
+            db.close()
 
         if message.reply_to:
-            await post_message(
-                app,
-                response_data,
-                delivery_route=message.reply_to,
-                cid=message.correlation_id,
+            await app.state.rabbitmq_channel.default_exchange.publish(
+                aio_pika.Message(body=response_json.encode()),
+                routing_key=message.reply_to,
             )
-            # await app.state.rabbitmq_channel.default_exchange.publish(
-            #     aio_pika.Message(
-            #         body=response_data.encode(), correlation_id=message.correlation_id
-            #     ),
-            #     routing_key=message.reply_to,
-            # )
             logger.info(f"Response sent to {message.reply_to}")
         else:
             logger.error("No reply_to in the original message. Cannot send response.")
 
 
-async def process_user_data_request(message: aio_pika.IncomingMessage):
+async def process_book_data_request(message: aio_pika.IncomingMessage):
     async with message.process():
         try:
-            message_body = message.body.decode()
-            logger.info(f"Received message body: {message_body}")
+            request_data = json.loads(message.body.decode())
+            action = request_data.get("action")
+            db = next(get_db())
 
-            if not message_body:
-                logger.error("Received empty message body")
-                response_data = json.dumps({"error": "Empty message received"})
+            if action == "get_unavailable_books":
+                unavailable_books = get_unavailable_books_with_return_dates(db)
+                book_data = []
+                for book in unavailable_books:
+                    book_dict = BookSchema.model_validate(book).model_dump()
+                    if book.borrows:
+                        latest_borrow = max(book.borrows, key=lambda b: b.return_date)
+                        book_dict["expected_return_date"] = latest_borrow.return_date
+                    else:
+                        book_dict["expected_return_date"] = None
+                    book_data.append(BookUnavailableSchema(**book_dict).model_dump())
+                response_data = book_data
+                logger.info(f"Sending data for {len(book_data)} unavailable books")
             else:
-                request_data = json.loads(message_body)
-                action = request_data.get("action")
+                raise ValueError(f"Unknown action: {action}")
 
-                if action == "get_users":
-                    db = next(get_db())
-                    try:
-                        users = get_users(db)
-                        user_data = [
-                            UserSchema.model_validate(user).model_dump()
-                            for user in users
-                        ]
-                        response_data = custom_json_dumps(user_data)
-                        logger.info(
-                            f"Sending user data: {response_data[:100]}..."
-                        )  # Log first 100 chars
-                    except Exception as e:
-                        logger.error(f"Error processing user data request: {str(e)}")
-                        response_data = json.dumps(
-                            {"error": f"Error getting users: {str(e)}"}
-                        )
-                    finally:
-                        db.close()
-
-                elif action == "get_users_with_borrowed_books":
-                    db = next(get_db())
-                    try:
-                        skip = request_data.get("skip", 0)
-                        limit = request_data.get("limit", 100)
-                        users_with_books = get_users_and_borrowed_books(
-                            db, skip=skip, limit=limit
-                        )
-                        response_data = custom_json_dumps(
-                            [
-                                UserSchema.model_validate(user).model_dump()
-                                for user in users_with_books
-                            ]
-                        )
-                        logger.info(
-                            f"Sending users with borrowed books data: {response_data[:100]}..."
-                        )  # Log first 100 chars
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing users with borrowed books request: {str(e)}"
-                        )
-                        response_data = json.dumps(
-                            {
-                                "error": f"Error getting users with borrowed books: {str(e)}"
-                            }
-                        )
-                    finally:
-                        db.close()
-
-                else:
-                    response_data = json.dumps({"error": f"Unknown action: {action}"})
-                    logger.error(f"Unknown action received: {action}")
+            response_json = json.dumps(response_data, default=str)
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {str(e)}")
-            response_data = json.dumps(
+            response_json = json.dumps(
                 {"error": f"Invalid JSON in message body: {str(e)}"}
             )
         except Exception as e:
-            logger.error(f"Unexpected error in process_user_data_request: {str(e)}")
-            response_data = json.dumps({"error": f"Unexpected error: {str(e)}"})
+            logger.error(f"Error processing {action} request: {str(e)}")
+            response_json = json.dumps({"error": f"Error processing request: {str(e)}"})
+        finally:
+            db.close()
 
         if message.reply_to:
             await app.state.rabbitmq_channel.default_exchange.publish(
-                aio_pika.Message(body=response_data.encode()),
+                aio_pika.Message(
+                    body=response_json.encode(), correlation_id=message.correlation_id
+                ),
                 routing_key=message.reply_to,
             )
             logger.info(f"Response sent to {message.reply_to}")
@@ -341,30 +282,6 @@ def borrow_book_item(
             status_code=403, detail="Book cannot be borrowed, please verify details"
         )
     return borrow_task
-
-
-# @app.get("/users/borrowed-books/", response_model=List[UserSchema])
-# def list_users_with_borrowed_books(
-#     skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
-# ):
-#     users_with_books = get_users_and_borrowed_books(db, skip=skip, limit=limit)
-
-#     logger.info(f"Number of users returned: {len(users_with_books)}")
-
-#     for user in users_with_books:
-#         logger.info(f"User ID: {user.id}, Username: {user.email}")
-#         logger.info(f"Number of borrows: {len(user.borrows)}")
-#         for borrow in user.borrows:
-#             logger.info(
-#                 f"  Borrow ID: {borrow.id}, Book: {borrow.book.title if borrow.book else 'N/A'}"
-#             )
-
-#     if not users_with_books:
-#         raise HTTPException(
-#             status_code=404, detail="No users with borrowed books found"
-#         )
-
-#     return users_with_books
 
 
 if __name__ == "__main__":
