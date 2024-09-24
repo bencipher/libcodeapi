@@ -1,7 +1,10 @@
+import os
+import sys
 import logging
 from fastapi import Depends, FastAPI, HTTPException, status
 import aio_pika
 
+sys.path.append("../src")
 from rabbmq import (
     create_or_get_queue,
     fetch_queue_response,
