@@ -93,13 +93,23 @@ async def post_message(
 
 
 async def create_or_get_queue(
-    current_app, queue_name="", durable=False, exclusive=True
+    current_app: FastAPI,
+    queue_name: str = "",
+    durable: bool = False,
+    exclusive: bool = False,
+    delete: bool = False,
 ):
-    queue = await current_app.state.rabbitmq_channel.declare_queue(
-        queue_name, durable=durable, exclusive=exclusive
-    )
-
-    return queue
+    try:
+        queue = await current_app.state.rabbitmq_channel.declare_queue(
+            queue_name, durable=durable, exclusive=exclusive, auto_delete=delete
+        )
+        return queue
+    except aio_pika.exceptions.ChannelClosed as e:
+        if "RESOURCE_LOCKED" in str(e):
+            # If the queue already exists and is locked, just try to get it
+            return await current_app.state.rabbitmq_channel.get_queue(queue_name)
+        else:
+            raise
 
 
 async def fetch_queue_response(queue, max_retries=3, retry_delay=2):
@@ -217,12 +227,8 @@ async def remove_book(book_id: str, db=Depends(get_db)):
 @app.get("/users", response_model=list[UserModel])
 async def list_users():
     try:
-        # Set up a queue to receive the response
-        response_queue = await app.state.rabbitmq_channel.declare_queue(
-            "", exclusive=True
-        )
+        response_queue = await create_or_get_queue(app)
 
-        # Send a message to request user data
         await post_message(
             app,
             {"action": "get_users"},
@@ -234,8 +240,9 @@ async def list_users():
         return [UserModel(**user) for user in user_data]
 
     except Exception as e:
+        logger.error(f"Error fetching user data: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching user data: {str(e)}"
+            status_code=500, detail=f"Error fetching user data: Please contact admin"
         )
 
 
@@ -243,30 +250,42 @@ async def list_users():
 async def list_users_with_borrowed_books(skip: int = 0, limit: int = 100):
     try:
         # Prepare the message
-        message_body = json.dumps(
-            {"action": "get_users_with_borrowed_books", "skip": skip, "limit": limit}
+        # message_body = json.dumps(
+        #     {"action": "get_users_with_borrowed_books", "skip": skip, "limit": limit}
+        # )
+        response_queue = await create_or_get_queue(
+            app, queue_name="users_borrowed_books_response", delete=True
         )
 
-        # Create a message
-        message = aio_pika.Message(
-            body=message_body.encode(),
-            reply_to="users_borrowed_books_response",  # Queue to receive the response
+        await post_message(
+            app,
+            {"action": "get_users_with_borrowed_books", "skip": skip, "limit": limit},
+            delivery_route="user_data_request",
+            reply_to=response_queue.name,
         )
+
+        response_data = await fetch_queue_response(response_queue)
+        return response_data
+        # Create a message
+        # message = aio_pika.Message(
+        #     body=message_body.encode(),
+        #     reply_to="users_borrowed_books_response",  # Queue to receive the response
+        # )
 
         # Send the message to the backend
-        await app.state.rabbitmq_channel.default_exchange.publish(
-            message, routing_key="user_data_request"
-        )
+        # await app.state.rabbitmq_channel.default_exchange.publish(
+        #     message, routing_key="user_data_request"
+        # )
 
-        # Wait for the response
-        response_queue = await app.state.rabbitmq_channel.declare_queue(
-            "users_borrowed_books_response", auto_delete=True
-        )
-        async with response_queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    response_data = json.loads(message.body.decode())
-                    return response_data
+        # # Wait for the response
+        # response_queue = await app.state.rabbitmq_channel.declare_queue(
+        #     "users_borrowed_books_response", auto_delete=True
+        # )
+        # async with response_queue.iterator() as queue_iter:
+        #     async for message in queue_iter:
+        #         async with message.process():
+        #             response_data = json.loads(message.body.decode())
+        #             return response_data
 
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
