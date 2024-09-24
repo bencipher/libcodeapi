@@ -1,10 +1,13 @@
-import asyncio
-import json
 import logging
-from typing import Optional, Union
 from fastapi import Depends, FastAPI, HTTPException, status
 import aio_pika
 
+from rabbmq import (
+    create_or_get_queue,
+    fetch_queue_response,
+    handle_message,
+    post_message,
+)
 from exceptions.exceptions import add_exception_handlers
 from .storage import get_database, init_db, close_db_connection
 from .crud import (
@@ -71,77 +74,6 @@ async def get_rabbitmq_channel():
 
 def get_db():
     return app.state.db
-
-
-async def post_message(
-    current_app: FastAPI,
-    data: Optional[str | dict],
-    delivery_mode: Optional[int] = 1,
-    delivery_route: Optional[str] = None,
-    reply_to: Optional[str] = None,
-):
-    if isinstance(data, dict):
-        data = json.dumps(data)
-    confirmation = await current_app.state.rabbitmq_channel.default_exchange.publish(
-        aio_pika.Message(
-            body=data.encode(), delivery_mode=delivery_mode, reply_to=reply_to
-        ),
-        routing_key=delivery_route,
-        mandatory=True,
-    )
-    return confirmation
-
-
-async def create_or_get_queue(
-    current_app: FastAPI,
-    queue_name: str = "",
-    durable: bool = False,
-    exclusive: bool = False,
-    delete: bool = False,
-):
-    try:
-        queue = await current_app.state.rabbitmq_channel.declare_queue(
-            queue_name, durable=durable, exclusive=exclusive, auto_delete=delete
-        )
-        return queue
-    except aio_pika.exceptions.ChannelClosed as e:
-        if "RESOURCE_LOCKED" in str(e):
-            # If the queue already exists and is locked, just try to get it
-            return await current_app.state.rabbitmq_channel.get_queue(queue_name)
-        else:
-            raise
-
-
-async def fetch_queue_response(queue, max_retries=3, retry_delay=2):
-    for attempt in range(max_retries):
-        async with queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    msg = json.loads(message.body.decode())
-                    if msg:
-                        return msg
-
-        if attempt < max_retries - 1:
-            await asyncio.sleep(retry_delay)
-
-    raise HTTPException(status_code=504, detail="Timeout waiting for user data")
-
-
-async def handle_message(
-    current_app: FastAPI, queue_name: str, data: Optional[str | dict]
-):
-    # Declare a durable queue
-    await create_or_get_queue(current_app, queue_name, True)
-
-    # Enable publisher confirms
-    await current_app.state.rabbitmq_channel.set_qos(prefetch_count=1)
-
-    # Publish the message with mandatory flag and wait for confirmation
-    confirmation = await post_message(
-        current_app, data, delivery_mode=2, delivery_route=queue_name
-    )
-
-    return confirmation, data["title"]
 
 
 # validate response later
@@ -272,31 +204,20 @@ async def list_users_with_borrowed_books(skip: int = 0, limit: int = 100):
 @app.get("/unavailable-books")
 async def root(skip: int = 0, limit: int = 100):
     try:
-        # Prepare the message
-        message_body = json.dumps(
-            {"action": "get_unavailable_books", "skip": skip, "limit": limit}
+
+        response_queue = await create_or_get_queue(
+            app, queue_name="unavailable_books_response", delete=True
         )
 
-        # Create a message
-        message = aio_pika.Message(
-            body=message_body.encode(),
-            reply_to="unavailable_books_response",  # Queue to receive the response
+        await post_message(
+            app,
+            {"action": "get_unavailable_books", "skip": skip, "limit": limit},
+            delivery_route="book_data_request",
+            reply_to=response_queue.name,
         )
 
-        # Send the message to the backend
-        await app.state.rabbitmq_channel.default_exchange.publish(
-            message, routing_key="book_data_request"
-        )
-
-        # Wait for the response
-        response_queue = await app.state.rabbitmq_channel.declare_queue(
-            "unavailable_books_response", auto_delete=True
-        )
-        async with response_queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    response_data = json.loads(message.body.decode())
-                    return response_data
+        response_data = await fetch_queue_response(response_queue)
+        return response_data
 
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
