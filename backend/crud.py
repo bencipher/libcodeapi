@@ -1,3 +1,6 @@
+import bson
+
+from exceptions.exceptions import DatabaseError
 from .schemas import BookCreate, BookUpdate, UserCreate
 from .models import BookModel, UserModel
 from .storage import get_database
@@ -12,12 +15,13 @@ async def create_book(db, book: BookCreate):
 
 
 async def get_book(db, book_id: str):
-    book = await db.books.find_one({"_id": ObjectId(book_id)})
-    if book:
-        # book["_id"] = str(book["_id"])
-        # print(book)
-        return BookModel(**book)
-    return None
+    try:
+        book = await db.books.find_one({"_id": ObjectId(book_id)})
+        if book:
+            return BookModel(**book)
+        return None
+    except bson.errors.InvalidId as e:
+        raise DatabaseError("Get Book Error: ", str(e))
 
 
 async def update_book(db, book_id: str, book_update: BookUpdate):
