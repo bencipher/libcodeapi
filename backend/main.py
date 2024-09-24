@@ -1,9 +1,11 @@
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Optional, Union
 from fastapi import Depends, FastAPI, HTTPException, status
 import aio_pika
+
+from exceptions.exceptions import add_exception_handlers
 from .storage import get_database, init_db, close_db_connection
 from .crud import (
     create_book,
@@ -56,6 +58,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+add_exception_handlers(app)
 
 async def get_rabbitmq_connection():
     return await aio_pika.connect_robust("amqp://guest:guest@rabbitmq/")
