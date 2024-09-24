@@ -16,6 +16,8 @@ WORKDIR /app
 
 # Copy the entire project
 COPY . .
+COPY wait-for-it.sh /app/wait-for-it.sh
+RUN chmod +x /app/wait-for-it.sh
 
 RUN if [ -f ${SERVICE}/requirements.txt ]; then \
         poetry add $(cat ${SERVICE}/requirements.txt); \

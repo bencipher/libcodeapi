@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   frontend:
     build:
@@ -12,8 +10,7 @@ services:
     depends_on:
       - postgres
       - backend
-      - internal_messaging
-    command: python -m frontend.main
+    command: ["/app/wait-for-it.sh", "backend:8000", "--", "python", "-m", "frontend.main"]
     networks:
       - app_network
     volumes:
@@ -29,9 +26,11 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mongo
-      - internal_messaging
-    command: python -m backend.main
+      mongo:
+        condition: service_healthy
+      internal_messaging:
+        condition: service_healthy
+    command: ["/app/wait-for-it.sh", "rabbitmq:5672", "--", "python", "-m", "backend.main"]
     networks:
       - app_network
     volumes:
@@ -58,6 +57,11 @@ services:
       - app_network
     ports:
       - "27018:27017"
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/testDocker --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   internal_messaging:
     image: rabbitmq:3-management
@@ -68,6 +72,11 @@ services:
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   app_network:
