@@ -9,10 +9,6 @@ from .crud import (
     get_book,
     update_book,
     delete_book,
-    get_unavailable_books,
-    create_user,
-    get_all_users,
-    get_user_borrowing_activities,
 )
 from .schemas import BookCreate, BookUpdate, UserCreate
 from .models import BookModel, UserModel
