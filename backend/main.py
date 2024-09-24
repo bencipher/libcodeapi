@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from typing import Optional
 from fastapi import Depends, FastAPI, HTTPException, status
 import aio_pika
 from .storage import get_database, init_db, close_db_connection
@@ -69,41 +70,49 @@ def get_db():
     return app.state.db
 
 
+async def post_message(
+    current_app: FastAPI, queue_name: str, data: Optional[str | dict]
+):
+    # Declare a durable queue
+    await app.state.rabbitmq_channel.declare_queue("new_books", durable=True)
+
+    # Enable publisher confirms
+    await current_app.state.rabbitmq_channel.set_qos(prefetch_count=1)
+
+    # Publish the message with mandatory flag and wait for confirmation
+    confirmation = await current_app.state.rabbitmq_channel.default_exchange.publish(
+        aio_pika.Message(
+            body=json.dumps(data).encode(),
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        ),
+        routing_key="new_books",
+        mandatory=True,
+    )
+
+    return confirmation, data["title"]
+
+
 # validate response later
 @app.post("/books", response_model=str, status_code=status.HTTP_201_CREATED)
 async def add_book(book: BookCreate, db=Depends(get_db)):
-    logger.info(f"Received request to add book: {book.title}")
-    new_book = await create_book(db, book)
-    if not new_book:
-        logger.error("Failed to create book in database")
-        raise HTTPException(status_code=500, detail="Failed to create book")
-
-    new_book.pop("total_copies", None)
     try:
+        logger.info(f"Received request to add book: {book.title}")
+        new_book = await create_book(db, book)
+        if not new_book:
+            logger.error("Failed to create book in database")
+            raise HTTPException(status_code=500, detail="Failed to create book")
+
+        new_book.pop("total_copies", None)
         logger.info(f"Attempting to publish book to RabbitMQ: {new_book['title']}")
 
-        # Declare a durable queue
-        queue = await app.state.rabbitmq_channel.declare_queue(
-            "new_books", durable=True
+        send_message, book_title = await post_message(
+            current_app=app, queue_name="new_books", data=new_book
         )
 
-        # Enable publisher confirms
-        await app.state.rabbitmq_channel.set_qos(prefetch_count=1)
-
-        # Publish the message with mandatory flag and wait for confirmation
-        confirmation = await app.state.rabbitmq_channel.default_exchange.publish(
-            aio_pika.Message(
-                body=json.dumps(new_book).encode(),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            ),
-            routing_key="new_books",
-            mandatory=True,
-        )
-
-        if confirmation:
-            logger.info(f"Successfully published book to RabbitMQ: {new_book['title']}")
+        if send_message:
+            logger.info(f"Successfully published book to RabbitMQ: {book_title}")
         else:
-            logger.error(f"Failed to publish book to RabbitMQ: {new_book['title']}")
+            logger.error(f"Failed to publish book to RabbitMQ: {book_title}")
             raise HTTPException(
                 status_code=500, detail="Failed to publish book to queue"
             )
@@ -115,8 +124,9 @@ async def add_book(book: BookCreate, db=Depends(get_db)):
             status_code=500, detail="Book couldn't be created at the moment"
         )
 
-    logger.info(f"Book added successfully: {new_book['id']}")
-    return new_book["id"]
+    else:
+        logger.info(f"Book added successfully: {new_book['id']}")
+        return new_book["id"]
 
 
 @app.get("/books/{book_id}", response_model=BookModel)
