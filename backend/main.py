@@ -74,22 +74,61 @@ def get_db():
 
 
 async def post_message(
+    current_app: FastAPI,
+    data: Optional[str | dict],
+    delivery_mode: Optional[int] = 1,
+    delivery_route: Optional[str] = None,
+    reply_to: Optional[str] = None,
+):
+    if isinstance(data, dict):
+        data = json.dumps(data)
+    confirmation = await current_app.state.rabbitmq_channel.default_exchange.publish(
+        aio_pika.Message(
+            body=data.encode(), delivery_mode=delivery_mode, reply_to=reply_to
+        ),
+        routing_key=delivery_route,
+        mandatory=True,
+    )
+    return confirmation
+
+
+async def create_or_get_queue(
+    current_app, queue_name="", durable=False, exclusive=True
+):
+    queue = await current_app.state.rabbitmq_channel.declare_queue(
+        queue_name, durable=durable, exclusive=exclusive
+    )
+
+    return queue
+
+
+async def fetch_queue_response(queue, max_retries=3, retry_delay=2):
+    for attempt in range(max_retries):
+        async with queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                async with message.process():
+                    msg = json.loads(message.body.decode())
+                    if msg:
+                        return msg
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(retry_delay)
+
+    raise HTTPException(status_code=504, detail="Timeout waiting for user data")
+
+
+async def handle_message(
     current_app: FastAPI, queue_name: str, data: Optional[str | dict]
 ):
     # Declare a durable queue
-    await app.state.rabbitmq_channel.declare_queue("new_books", durable=True)
+    await create_or_get_queue(current_app, queue_name, True)
 
     # Enable publisher confirms
     await current_app.state.rabbitmq_channel.set_qos(prefetch_count=1)
 
     # Publish the message with mandatory flag and wait for confirmation
-    confirmation = await current_app.state.rabbitmq_channel.default_exchange.publish(
-        aio_pika.Message(
-            body=json.dumps(data).encode(),
-            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-        ),
-        routing_key="new_books",
-        mandatory=True,
+    confirmation = await post_message(
+        current_app, data, delivery_mode=2, delivery_route=queue_name
     )
 
     return confirmation, data["title"]
@@ -108,7 +147,7 @@ async def add_book(book: BookCreate, db=Depends(get_db)):
         new_book.pop("total_copies", None)
         logger.info(f"Attempting to publish book to RabbitMQ: {new_book['title']}")
 
-        send_message, book_title = await post_message(
+        send_message, book_title = await handle_message(
             current_app=app, queue_name="new_books", data=new_book
         )
 
@@ -150,7 +189,6 @@ async def modify_book(book_id: str, book_update: BookUpdate, db=Depends(get_db))
 
 @app.delete("/books/{book_id}", response_model=dict)
 async def remove_book(book_id: str, db=Depends(get_db)):
-    # First, fetch the book to get its ISBN
     book = await get_book(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -163,24 +201,17 @@ async def remove_book(book_id: str, db=Depends(get_db)):
         )
 
     # Send ISBN to frontend for deletion
-    try:
-        await app.state.rabbitmq_channel.default_exchange.publish(
-            aio_pika.Message(body=book.isbn.encode()),
-            routing_key="delete_books_frontend",
-        )
-        logger.info(f"Delete message published for book ISBN: {book.isbn}")
-    except Exception as e:
-        logger.error(f"Failed to publish delete message: {e}")
-        # Note: We're not raising an exception here as the book is already deleted from the backend
+    await post_message(
+        current_app=app, data=book.isbn, delivery_route="delete_books_frontend"
+    )
+
+    logger.info(
+        f"Delete message Instruction for book ID: {book_id} ISBN: {book.isbn} sent!"
+    )
 
     return {
         "message": "Book successfully deleted from backend and delete message sent to frontend"
     }
-
-
-# @app.get("/books/unavailable", response_model=list[BookModel])
-# async def list_unavailable_books(db=Depends(get_db)):
-#     return await get_unavailable_books()
 
 
 @app.get("/users", response_model=list[UserModel])
@@ -192,27 +223,15 @@ async def list_users():
         )
 
         # Send a message to request user data
-        await app.state.rabbitmq_channel.default_exchange.publish(
-            aio_pika.Message(
-                body=json.dumps({"action": "get_users"}).encode(),
-                reply_to=response_queue.name,
-            ),
-            routing_key="user_data_request",
+        await post_message(
+            app,
+            {"action": "get_users"},
+            delivery_route="user_data_request",
+            reply_to=response_queue.name,
         )
-        async with response_queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    user_data = json.loads(message.body.decode())
-                    print("Trying to decode the received user objects")
-                    print(f"{user_data=}")
-                    return [UserModel(**user) for user in user_data]
 
-                # We only need one message, so we break after processing
-                break
-
-        # If we didn't receive a response within 5 seconds, raise an exception
-        await asyncio.sleep(5)
-        raise HTTPException(status_code=504, detail="Timeout waiting for user data")
+        user_data = await fetch_queue_response(response_queue)
+        return [UserModel(**user) for user in user_data]
 
     except Exception as e:
         raise HTTPException(
