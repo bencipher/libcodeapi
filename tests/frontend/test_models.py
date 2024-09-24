@@ -6,14 +6,14 @@ from datetime import datetime, timedelta
 from frontend.models import Borrow, User, Book
 
 
-def test_user_model(db_session: Session, test_user: User):
+def test_user_model(test_user: User):
     assert test_user.email == "test@example.com"
     assert test_user.first_name == "Test"
     assert test_user.last_name == "User"
     assert test_user.hashed_password != "testpassword"
 
 
-def test_book_model(db_session: Session, test_book: Book):
+def test_book_model(test_book: Book):
     assert test_book.title == "Test Book"
     assert test_book.publisher == "Test Publisher"
     assert test_book.isbn == "1234567890"
