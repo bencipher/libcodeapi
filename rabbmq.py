@@ -16,12 +16,13 @@ async def post_message(
     delivery_mode: Optional[int] = 1,
     delivery_route: Optional[str] = None,
     reply_to: Optional[str] = None,
+    cid: str = None
 ):
     if isinstance(data, dict):
         data = json.dumps(data)
     confirmation = await current_app.state.rabbitmq_channel.default_exchange.publish(
         aio_pika.Message(
-            body=data.encode(), delivery_mode=delivery_mode, reply_to=reply_to
+            body=data.encode(), delivery_mode=delivery_mode, reply_to=reply_to, correlation_id=cid
         ),
         routing_key=delivery_route,
         mandatory=True,

@@ -1,3 +1,4 @@
+import sys
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -33,6 +34,9 @@ from frontend.schemas import (
 from frontend.storage import SessionLocal
 
 from typing import List
+
+sys.path.append("../src")
+from rabbmq import post_message
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -183,12 +187,18 @@ async def process_book_data_request(message: aio_pika.IncomingMessage):
             response_data = json.dumps({"error": f"Unexpected error: {str(e)}"})
 
         if message.reply_to:
-            await app.state.rabbitmq_channel.default_exchange.publish(
-                aio_pika.Message(
-                    body=response_data.encode(), correlation_id=message.correlation_id
-                ),
-                routing_key=message.reply_to,
+            await post_message(
+                app,
+                response_data,
+                delivery_route=message.reply_to,
+                cid=message.correlation_id,
             )
+            # await app.state.rabbitmq_channel.default_exchange.publish(
+            #     aio_pika.Message(
+            #         body=response_data.encode(), correlation_id=message.correlation_id
+            #     ),
+            #     routing_key=message.reply_to,
+            # )
             logger.info(f"Response sent to {message.reply_to}")
         else:
             logger.error("No reply_to in the original message. Cannot send response.")
