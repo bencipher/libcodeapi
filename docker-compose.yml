@@ -52,7 +52,7 @@ services:
   mongo:
     image: bitnami/mongodb:latest
     volumes:
-      - mongo_data:/data/db
+      - mongo_data:/bitnami/mongodb
     networks:
       - app_network
     ports:
