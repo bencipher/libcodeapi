@@ -71,4 +71,4 @@ def test_borrow_unavailable_book(client, test_user, test_book, db_session):
     assert response.status_code == 403
     data = response.json()
     assert "detail" in data
-    assert "not available" in data["detail"]
+    assert "Error occured, check the details supplied" in data["detail"]

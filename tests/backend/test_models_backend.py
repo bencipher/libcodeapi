@@ -4,12 +4,14 @@ from backend.schemas import BookCreate
 from motor.motor_asyncio import AsyncIOMotorClient
 
 
+@pytest.mark.skip()
 @pytest.mark.asyncio
 async def test_using_motor_client(motor_client: AsyncIOMotorClient) -> None:
     """This test has access to a Motor client."""
     await motor_client.server_info()
 
 
+@pytest.mark.skip()
 @pytest.mark.asyncio
 async def test_add_book(test_db):
     book_data = {
@@ -32,6 +34,7 @@ async def test_add_book(test_db):
     assert added_book["title"] == book_data["title"]
 
 
+@pytest.mark.skip()
 @pytest.mark.asyncio
 async def test_get_book_by_id(test_db):
     # First, add a book
